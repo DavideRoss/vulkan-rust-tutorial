@@ -79,6 +79,8 @@ impl App {
         create_render_pass(&instance, &device, &mut data)?;
         create_pipeline(&device, &mut data)?;
         create_framebuffers(&device, &mut data)?;
+        create_command_pool(&instance, &device, &mut data)?;
+        create_command_buffers(&device, &mut data)?;
 
         Ok(Self { entry, instance, data, device })
     }
@@ -88,6 +90,7 @@ impl App {
     }
 
     unsafe fn destroy(&mut self) {
+        self.device.destroy_command_pool(self.data.command_pool, None);
         self.data.framebuffers.iter().for_each(|f| self.device.destroy_framebuffer(*f, None));
         self.device.destroy_pipeline(self.data.pipeline, None);
         self.device.destroy_pipeline_layout(self.data.pipeline_layout, None);
@@ -123,7 +126,9 @@ struct AppData {
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
 
-    framebuffers: Vec<vk::Framebuffer>
+    framebuffers: Vec<vk::Framebuffer>,
+    command_pool: vk::CommandPool,
+    command_buffers: Vec<vk::CommandBuffer>
 }
 
 // ================================================================================================
@@ -621,6 +626,54 @@ unsafe fn create_framebuffers(
 
         device.create_framebuffer(&create_info, None)
     }).collect::<Result<Vec<_>, _>>()?;
+
+    Ok(())
+}
+
+// ================================================================================================
+// COMMAND POOL
+// ================================================================================================
+
+unsafe fn create_command_pool(
+    instance: &Instance,
+    device: &Device,
+    data: &mut AppData
+) -> Result<()> {
+    let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
+
+    let info = vk::CommandPoolCreateInfo::builder()
+        .flags(vk::CommandPoolCreateFlags::empty())
+        .queue_family_index(indices.graphics);
+
+    data.command_pool = device.create_command_pool(&info, None)?;
+
+    for (i, command_buffer) in data.command_buffers.iter().enumerate() {
+        let inheritance = vk::CommandBufferInheritanceInfo::builder();
+
+        let info = vk::CommandBufferBeginInfo::builder()
+            .flags(vk::CommandBufferUsageFlags::empty())
+            .inheritance_info(&inheritance);
+        
+        device.begin_command_buffer(*command_buffer, &info)?;
+
+        let render_area = vk::Rect2D::builder()
+            .offset(vk::Offset2D::default())
+            .extent(data.swapchain_extent);
+    }
+
+    Ok(())
+}
+
+unsafe fn create_command_buffers(
+    device: &Device,
+    data: &mut AppData
+) -> Result<()> {
+    let allocate_info = vk::CommandBufferAllocateInfo::builder()
+        .command_pool(data.command_pool)
+        .level(vk::CommandBufferLevel::PRIMARY)
+        .command_buffer_count(data.framebuffers.len() as u32);
+
+    data.command_buffers = device.allocate_command_buffers(&allocate_info)?;
 
     Ok(())
 }
