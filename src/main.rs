@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::ffi::CStr;
 use std::os::raw::c_void;
+use std::mem::size_of;
 
 use log::*;
 use anyhow::{anyhow, Result};
@@ -21,10 +22,21 @@ use vulkanalia::vk::ExtDebugUtilsExtension;
 use vulkanalia::vk::KhrSurfaceExtension;
 use vulkanalia::vk::KhrSwapchainExtension;
 
+use nalgebra_glm as glm;
+use lazy_static::lazy_static;
+
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 const VALIDATION_LAYER: vk::ExtensionName = vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
 const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[vk::KHR_SWAPCHAIN_EXTENSION.name];
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
+
+lazy_static! {
+    static ref VERTICES: Vec<Vertex> = vec![
+        Vertex::new(glm::vec2( 0.0, -0.5), glm::vec3(1.0, 0.0, 0.0)),
+        Vertex::new(glm::vec2( 0.0, -0.5), glm::vec3(1.0, 0.0, 0.0)),
+        Vertex::new(glm::vec2( 0.0, -0.5), glm::vec3(1.0, 0.0, 0.0)),
+    ];
+}
 
 fn main() -> Result<()> {
     pretty_env_logger::init();
@@ -616,7 +628,11 @@ unsafe fn create_pipeline(device: &Device, data: &mut AppData) -> Result<()> {
         .module(frag_shader_module)
         .name(b"main\0");
 
-    let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::builder();
+    let binding_descriptions = &[Vertex::binding_description()];
+    let attribute_descriptions = Vertex::attribute_descriptions();
+    let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::builder()
+        .vertex_binding_descriptions(binding_descriptions)
+        .vertex_attribute_descriptions(&attribute_descriptions);
 
     let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo::builder()
         .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
@@ -889,5 +905,44 @@ impl SwapchainSupport {
             formats: instance.get_physical_device_surface_formats_khr(physical_device, data.surface)?,
             present_modes: instance.get_physical_device_surface_present_modes_khr(physical_device, data.surface)?
         })
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+struct Vertex {
+    pos: glm::Vec2,
+    color: glm::Vec3
+}
+
+impl Vertex {
+    fn new(pos: glm::Vec2, color: glm::Vec3) -> Self {
+        Self { pos, color }
+    }
+
+    fn binding_description() -> vk::VertexInputBindingDescription {
+        vk::VertexInputBindingDescription::builder()
+            .binding(0)
+            .stride(size_of::<Vertex>() as u32)
+            .input_rate(vk::VertexInputRate::VERTEX)
+            .build()
+    }
+
+    fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 2] {
+        let pos = vk::VertexInputAttributeDescription::builder()
+            .binding(0)
+            .location(0)
+            .format(vk::Format::R32G32_SFLOAT)
+            .offset(0)
+            .build();
+
+        let color = vk::VertexInputAttributeDescription::builder()
+            .binding(0)
+            .location(1)
+            .format(vk::Format::R32G32B32_SFLOAT)
+            .offset(size_of::<glm::Vec2>() as u32)
+            .build();
+
+        [pos, color]
     }
 }
