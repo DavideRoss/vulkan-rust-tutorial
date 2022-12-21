@@ -1,12 +1,15 @@
 #![allow(dead_code, unused_variables, clippy::too_many_arguments, clippy::unnecessary_wraps)]
 
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::ffi::CStr;
-use std::os::raw::c_void;
+use std::fs::File;
+use std::hash::{Hash, Hasher};
+use std::io::BufReader;
 use std::mem::size_of;
+use std::os::raw::c_void;
 use std::ptr::copy_nonoverlapping as memcpy;
 use std::time::Instant;
-use std::fs::File;
 
 use log::*;
 use anyhow::{anyhow, Result};
@@ -26,30 +29,11 @@ use vulkanalia::vk::KhrSurfaceExtension;
 use vulkanalia::vk::KhrSwapchainExtension;
 
 use nalgebra_glm as glm;
-use lazy_static::lazy_static;
 
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 const VALIDATION_LAYER: vk::ExtensionName = vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
 const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[vk::KHR_SWAPCHAIN_EXTENSION.name];
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
-
-lazy_static! {
-    static ref VERTICES: Vec<Vertex> = vec![
-        Vertex::new(glm::vec3(-0.5, -0.5,  0.0), glm::vec3(1.0, 0.0, 0.0), glm::vec2(1.0, 0.0)),
-        Vertex::new(glm::vec3( 0.5, -0.5,  0.0), glm::vec3(0.0, 1.0, 0.0), glm::vec2(0.0, 0.0)),
-        Vertex::new(glm::vec3( 0.5,  0.5,  0.0), glm::vec3(0.0, 0.0, 1.0), glm::vec2(0.0, 1.0)),
-        Vertex::new(glm::vec3(-0.5,  0.5,  0.0), glm::vec3(1.0, 1.0, 1.0), glm::vec2(1.0, 1.0)),
-        Vertex::new(glm::vec3(-0.5, -0.5, -0.5), glm::vec3(1.0, 0.0, 0.0), glm::vec2(1.0, 0.0)),
-        Vertex::new(glm::vec3( 0.5, -0.5, -0.5), glm::vec3(0.0, 1.0, 0.0), glm::vec2(0.0, 0.0)),
-        Vertex::new(glm::vec3( 0.5,  0.5, -0.5), glm::vec3(0.0, 0.0, 1.0), glm::vec2(0.0, 1.0)),
-        Vertex::new(glm::vec3(-0.5,  0.5, -0.5), glm::vec3(1.0, 1.0, 1.0), glm::vec2(1.0, 1.0)),
-    ];
-}
-
-const INDICES: &[u16] = &[
-    0, 1, 2, 2, 3, 0,
-    4, 5, 6, 6, 7, 4,
-];
 
 fn main() -> Result<()> {
     pretty_env_logger::init();
@@ -127,6 +111,7 @@ impl App {
         create_texture_image_view(&device, &mut data)?;
         create_texture_sampler(&device, &mut data)?;
 
+        load_model(&mut data)?;
         create_vertex_buffer(&instance, &device, &mut data)?;
         create_index_buffer(&instance, &device, &mut data)?;
         create_uniform_buffers(&instance, &device, &mut data)?;
@@ -333,9 +318,6 @@ struct AppData {
     in_flight_fences: Vec<vk::Fence>,
     images_in_flight: Vec<vk::Fence>,
 
-    vertex_buffer: vk::Buffer,
-    vertex_buffer_memory: vk::DeviceMemory,
-
     index_buffer: vk::Buffer,
     index_buffer_memory: vk::DeviceMemory,
 
@@ -352,7 +334,12 @@ struct AppData {
 
     depth_image: vk::Image,
     depth_image_memory: vk::DeviceMemory,
-    depth_image_view: vk::ImageView
+    depth_image_view: vk::ImageView,
+
+    vertices: Vec<Vertex>,
+    indices: Vec<u32>,
+    vertex_buffer: vk::Buffer,
+    vertex_buffer_memory: vk::DeviceMemory
 }
 
 // ================================================================================================
@@ -954,7 +941,7 @@ unsafe fn create_command_buffers(
 
         device.cmd_bind_pipeline(*command_buffer, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
         device.cmd_bind_vertex_buffers(*command_buffer, 0, &[data.vertex_buffer], &[0]);
-        device.cmd_bind_index_buffer(*command_buffer, data.index_buffer, 0, vk::IndexType::UINT16);
+        device.cmd_bind_index_buffer(*command_buffer, data.index_buffer, 0, vk::IndexType::UINT32);
         device.cmd_bind_descriptor_sets(
             *command_buffer,
             vk::PipelineBindPoint::GRAPHICS,
@@ -963,7 +950,7 @@ unsafe fn create_command_buffers(
             &[data.descriptor_sets[i]],
             &[],
         );
-        device.cmd_draw_indexed(*command_buffer, INDICES.len() as u32, 1, 0, 0, 0);
+        device.cmd_draw_indexed(*command_buffer, data.indices.len() as u32, 1, 0, 0, 0);
         device.cmd_end_render_pass(*command_buffer);
 
         device.end_command_buffer(*command_buffer)?;
@@ -1005,7 +992,7 @@ unsafe fn create_vertex_buffer(
     device: &Device,
     data: &mut AppData
 ) -> Result<()> {
-    let size = (size_of::<Vertex>() * VERTICES.len()) as u64;
+    let size = (size_of::<Vertex>() * data.vertices.len()) as u64;
 
     let (staging_buffer, staging_buffer_memory) = create_buffer(
         instance, device, data, size,
@@ -1014,7 +1001,7 @@ unsafe fn create_vertex_buffer(
     )?;
 
     let memory = device.map_memory(staging_buffer_memory, 0, size, vk::MemoryMapFlags::empty())?;
-    memcpy(VERTICES.as_ptr(), memory.cast(), VERTICES.len());
+    memcpy(data.vertices.as_ptr(), memory.cast(), data.vertices.len());
 
     let (vertex_buffer, vertex_buffer_memory) = create_buffer(instance, device, data, size,
         vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
@@ -1053,7 +1040,7 @@ unsafe fn create_index_buffer(
     device: &Device,
     data: &mut AppData
 ) -> Result<()> {
-    let size = (size_of::<u16>() * INDICES.len()) as u64;
+    let size = (size_of::<u32>() * data.indices.len()) as u64;
 
     let (staging_buffer, staging_buffer_memory) = create_buffer(
         instance, device, data, size,
@@ -1062,7 +1049,7 @@ unsafe fn create_index_buffer(
     )?;
 
     let memory = device.map_memory(staging_buffer_memory, 0,  size, vk::MemoryMapFlags::empty())?;
-    memcpy(INDICES.as_ptr(), memory.cast(), INDICES.len());
+    memcpy(data.indices.as_ptr(), memory.cast(), data.indices.len());
 
     let (index_buffer, index_buffer_memory) = create_buffer(instance, device, data, size,
         vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
@@ -1231,7 +1218,7 @@ unsafe fn create_texture_image(
     device: &Device,
     data: &mut AppData
 ) -> Result<()> {
-    let image = File::open("resources/texture.png")?;
+    let image = File::open("resources/viking_room.png")?;
 
     let decoder = png::Decoder::new(image);
     let mut reader = decoder.read_info()?;
@@ -1556,6 +1543,53 @@ unsafe fn get_depth_format(
 }
 
 // ================================================================================================
+// MODELS
+// ================================================================================================
+
+fn load_model(data: &mut AppData) -> Result<()> {
+    let mut reader = BufReader::new(File::open("resources/viking_room.obj")?);
+
+    let (models, _) = tobj::load_obj_buf(
+        &mut reader, 
+        &tobj::LoadOptions { triangulate: true, ..Default::default() }, 
+        |_| Ok(Default::default())
+    )?;
+
+    let mut unique_vertices = HashMap::new();
+
+    for model in &models {
+        for index in &model.mesh.indices {
+            let pos_offset = (3 * index) as usize;
+            let tex_coord_offset = (2 * index) as usize;
+
+            let vertex = Vertex {
+                pos: glm::vec3(
+                    model.mesh.positions[pos_offset],
+                    model.mesh.positions[pos_offset + 1],
+                    model.mesh.positions[pos_offset + 2],
+                ),
+                color: glm::vec3(1.0, 1.0, 1.0),
+                tex_coord: glm::vec2(
+                    model.mesh.texcoords[tex_coord_offset],
+                    1.0 - model.mesh.texcoords[tex_coord_offset + 1]
+                )
+            };
+
+            if let Some(index) = unique_vertices.get(&vertex) {
+                data.indices.push(*index as u32);
+            } else {
+                let index = data.vertices.len();
+                unique_vertices.insert(vertex, index);
+                data.vertices.push(vertex);
+                data.indices.push(index as u32);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// ================================================================================================
 // STRUCTS
 // ================================================================================================
 
@@ -1656,6 +1690,29 @@ impl Vertex {
             .build();
 
         [pos, color, tex_coord]
+    }
+}
+
+impl PartialEq for Vertex {
+    fn eq(&self, other: &Self) -> bool {
+        self.pos == other.pos && self.color == other.color && self.tex_coord == other.tex_coord
+    }
+}
+
+impl Eq for Vertex {}
+
+impl Hash for Vertex {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.pos[0].to_bits().hash(state);
+        self.pos[1].to_bits().hash(state);
+        self.pos[2].to_bits().hash(state);
+
+        self.color[0].to_bits().hash(state);
+        self.color[1].to_bits().hash(state);
+        self.color[2].to_bits().hash(state);
+
+        self.tex_coord[0].to_bits().hash(state);
+        self.tex_coord[1].to_bits().hash(state);
     }
 }
 
