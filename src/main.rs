@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::ffi::CStr;
 use std::fs::File;
-use std::hash::{Hash, Hasher};
+
 use std::io::BufReader;
 use std::mem::size_of;
 use std::os::raw::c_void;
@@ -30,6 +30,15 @@ use vulkanalia::vk::KhrSwapchainExtension;
 
 use nalgebra_glm as glm;
 
+mod objects;
+use crate::objects::texture::*;
+use crate::objects::vertex::*;
+use crate::objects::uniform_buffer_object::*;
+
+mod graphics;
+use crate::graphics::queue_family_indices::*;
+use crate::graphics::swapchain_support::*;
+
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 const VALIDATION_LAYER: vk::ExtensionName = vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
 const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[vk::KHR_SWAPCHAIN_EXTENSION.name];
@@ -37,6 +46,8 @@ const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 fn main() -> Result<()> {
     pretty_env_logger::init();
+
+    let a = Texture { };
 
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
@@ -297,7 +308,7 @@ impl App {
 }
 
 #[derive(Clone, Debug, Default)]
-struct AppData {
+pub struct AppData {
     surface: vk::SurfaceKHR,
     messenger: vk::DebugUtilsMessengerEXT,
     physical_device: vk::PhysicalDevice,
@@ -1831,139 +1842,4 @@ unsafe fn create_color_objects(
     )?;
 
     Ok(())
-}
-
-// ================================================================================================
-// STRUCTS
-// ================================================================================================
-
-#[derive(Copy, Clone, Debug)]
-struct QueueFamilyIndices {
-    graphics: u32,
-    present: u32
-}
-
-impl QueueFamilyIndices {
-    unsafe fn get(
-        instance: &Instance,
-        data: &AppData,
-        physical_device: vk::PhysicalDevice
-    ) -> Result<Self> {
-        let properties = instance.get_physical_device_queue_family_properties(physical_device);
-        let graphics = properties.iter().position(|p| p.queue_flags.contains(vk::QueueFlags::GRAPHICS)).map(|i| i as u32);
-
-        let mut present = None;
-        for (index, properties) in properties.iter().enumerate() {
-            if instance.get_physical_device_surface_support_khr(physical_device, index as u32, data.surface)? {
-                present = Some(index as u32);
-                break;
-            }
-        }
-
-        if let (Some(graphics), Some(present)) = (graphics, present) {
-            Ok(Self { graphics, present })
-        } else {
-            Err(anyhow!(SuitabilityError("Missing required queue families.")))
-        }
-    }
-}
-
-
-#[derive(Clone, Debug)]
-struct SwapchainSupport {
-    capabilities: vk::SurfaceCapabilitiesKHR,
-    formats: Vec<vk::SurfaceFormatKHR>,
-    present_modes: Vec<vk::PresentModeKHR>
-}
-
-impl SwapchainSupport {
-    unsafe fn get(
-        instance: &Instance,
-        data: &AppData,
-        physical_device: vk::PhysicalDevice
-    ) -> Result<Self> {
-        Ok(Self{
-            capabilities: instance.get_physical_device_surface_capabilities_khr(physical_device, data.surface)?,
-            formats: instance.get_physical_device_surface_formats_khr(physical_device, data.surface)?,
-            present_modes: instance.get_physical_device_surface_present_modes_khr(physical_device, data.surface)?
-        })
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-struct Vertex {
-    pos: glm::Vec3,
-    color: glm::Vec3,
-    tex_coord: glm::Vec2
-}
-
-impl Vertex {
-    fn new(pos: glm::Vec3, color: glm::Vec3, tex_coord: glm::Vec2) -> Self {
-        Self { pos, color, tex_coord }
-    }
-
-    fn binding_description() -> vk::VertexInputBindingDescription {
-        vk::VertexInputBindingDescription::builder()
-            .binding(0)
-            .stride(size_of::<Vertex>() as u32)
-            .input_rate(vk::VertexInputRate::VERTEX)
-            .build()
-    }
-
-    fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 3] {
-        let pos = vk::VertexInputAttributeDescription::builder()
-            .binding(0)
-            .location(0)
-            .format(vk::Format::R32G32B32_SFLOAT)
-            .offset(0)
-            .build();
-
-        let color = vk::VertexInputAttributeDescription::builder()
-            .binding(0)
-            .location(1)
-            .format(vk::Format::R32G32B32_SFLOAT)
-            .offset(size_of::<glm::Vec3>() as u32)
-            .build();
-
-        let tex_coord = vk::VertexInputAttributeDescription::builder()
-            .binding(0)
-            .location(2)
-            .format(vk::Format::R32G32_SFLOAT)
-            .offset((size_of::<glm::Vec3>() + size_of::<glm::Vec3>()) as u32)
-            .build();
-
-        [pos, color, tex_coord]
-    }
-}
-
-impl PartialEq for Vertex {
-    fn eq(&self, other: &Self) -> bool {
-        self.pos == other.pos && self.color == other.color && self.tex_coord == other.tex_coord
-    }
-}
-
-impl Eq for Vertex {}
-
-impl Hash for Vertex {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.pos[0].to_bits().hash(state);
-        self.pos[1].to_bits().hash(state);
-        self.pos[2].to_bits().hash(state);
-
-        self.color[0].to_bits().hash(state);
-        self.color[1].to_bits().hash(state);
-        self.color[2].to_bits().hash(state);
-
-        self.tex_coord[0].to_bits().hash(state);
-        self.tex_coord[1].to_bits().hash(state);
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-struct UniformBufferObject {
-    model: glm::Mat4,
-    view: glm::Mat4,
-    proj: glm::Mat4,
 }
