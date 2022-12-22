@@ -3,7 +3,7 @@ use vulkanalia::vk::KhrSurfaceExtension;
 
 use anyhow::{anyhow, Result};
 
-use crate::{AppData, Instance, SuitabilityError};
+use crate::{AppData, SuitabilityError};
 
 #[derive(Copy, Clone, Debug)]
 pub struct QueueFamilyIndices {

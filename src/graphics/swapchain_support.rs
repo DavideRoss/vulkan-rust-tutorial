@@ -3,7 +3,7 @@ use vulkanalia::vk::KhrSurfaceExtension;
 
 use anyhow::Result;
 
-use crate::{AppData, Instance};
+use crate::AppData;
 
 #[derive(Clone, Debug)]
 pub struct SwapchainSupport {
