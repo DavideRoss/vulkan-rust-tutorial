@@ -120,12 +120,11 @@ impl App {
         create_depth_objects(&instance, &device, &mut data)?;
         create_framebuffers(&device, &mut data)?;
 
-        data.texture = Texture::from_filepath(
-            String::from("resources/jvctv/textures/JVCTV_albedo.png"),
-            &instance,
-            &device,
-            &data
-        )?;
+        data.textures = vec![
+            Texture::from_filepath(String::from("resources/jvctv/textures/JVCTV_albedo.png"), &instance, &device, &data)?,
+            // Texture::from_filepath(String::from("resources/jvctv/textures/JVCTV_roughness.png"), &instance, &device, &data)?,
+            // Texture::from_filepath(String::from("resources/jvctv/textures/JVCTV_metallic.png"), &instance, &device, &data)?
+        ];
 
         create_texture_sampler(&device, &mut data)?;
 
@@ -233,16 +232,9 @@ impl App {
         self.destroy_swapchain();
 
         self.device.destroy_sampler(self.data.texture_sampler, None);
-        // self.device.destroy_image_view(self.data.texture_image_view, None);
-        // self.device.destroy_image(self.data.texture_image, None);
-        // self.device.free_memory(self.data.texture_image_memory, None);
-        self.data.texture.destroy(&self.device);
+        self.data.textures.iter().for_each(|t| t.destroy(&self.device));
 
         self.device.destroy_descriptor_set_layout(self.data.descriptor_set_layout, None);
-        // self.device.destroy_buffer(self.data.index_buffer, None);
-        // self.device.free_memory(self.data.index_buffer_memory, None);
-        // self.device.destroy_buffer(self.data.vertex_buffer, None);
-        // self.device.free_memory(self.data.vertex_buffer_memory, None);
         self.data.mesh.destroy(&self.device);
         self.data.in_flight_fences.iter().for_each(|f| self.device.destroy_fence(*f, None));
         self.data.render_finished_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
@@ -348,9 +340,6 @@ pub struct AppData {
     in_flight_fences: Vec<vk::Fence>,
     images_in_flight: Vec<vk::Fence>,
 
-    // index_buffer: vk::Buffer,
-    // index_buffer_memory: vk::DeviceMemory,
-
     uniform_buffers: Vec<vk::Buffer>,
     uniform_buffers_memory: Vec<vk::DeviceMemory>,
 
@@ -358,21 +347,15 @@ pub struct AppData {
     descriptor_sets: Vec<vk::DescriptorSet>,
 
     mip_levels: u32,
-    // texture_image: vk::Image,
-    // texture_image_memory: vk::DeviceMemory,
-    // texture_image_view: vk::ImageView,
-    texture: Texture,
+    // texture: Texture,
+    textures: Vec<Texture>,
     texture_sampler: vk::Sampler,
 
     depth_image: vk::Image,
     depth_image_memory: vk::DeviceMemory,
     depth_image_view: vk::ImageView,
 
-    // vertices: Vec<Vertex>,
-    // indices: Vec<u32>,
     mesh: Mesh,
-    // vertex_buffer: vk::Buffer,
-    // vertex_buffer_memory: vk::DeviceMemory,
 
     color_image: vk::Image,
     color_image_memory: vk::DeviceMemory,
@@ -1157,10 +1140,17 @@ unsafe fn create_descriptor_sets(
 
         let info = vk::DescriptorImageInfo::builder()
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .image_view(data.texture.image_view)
+            .image_view(data.textures[0].image_view)
             .sampler(data.texture_sampler);
-
         let image_info = &[info];
+
+        // let image_info: &[vk::DescriptorImageInfo] = data.textures.iter().map(|t| {
+        //     vk::DescriptorImageInfo::builder()
+        //         .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+        //         .image_view(t.image_view)
+        //         .sampler(data.texture_sampler)
+        // }).collect::<Vec<vk::DescriptorImageInfo>>().try_into()?;
+
         let sampler_write = vk::WriteDescriptorSet::builder()
             .dst_set(data.descriptor_sets[i])
             .dst_binding(1)

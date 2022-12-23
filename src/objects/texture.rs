@@ -94,7 +94,7 @@ impl Texture {
         })
     }
 
-    pub unsafe fn destroy(&mut self, device: &Device) {
+    pub unsafe fn destroy(&self, device: &Device) {
         device.destroy_image_view(self.image_view, None);
         device.destroy_image(self.image, None);
         device.free_memory(self.image_memory, None);

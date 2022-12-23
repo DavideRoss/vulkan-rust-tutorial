@@ -179,7 +179,7 @@ impl Mesh {
         Ok((index_buffer, index_buffer_memory))
     }
 
-    pub unsafe fn destroy(&mut self, device: &Device) {
+    pub unsafe fn destroy(&self, device: &Device) {
         device.destroy_buffer(self.vertex_buffer, None);
         device.free_memory(self.vertex_buffer_memory, None);
         device.destroy_buffer(self.index_buffer, None);
