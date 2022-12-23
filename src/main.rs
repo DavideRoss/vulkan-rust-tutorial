@@ -1,11 +1,8 @@
 #![allow(dead_code, unused_variables, clippy::too_many_arguments, clippy::unnecessary_wraps)]
 
-use std::collections::HashMap;
 use std::collections::HashSet;
 use std::ffi::CStr;
-use std::fs::File;
 
-use std::io::BufReader;
 use std::mem::size_of;
 use std::os::raw::c_void;
 use std::ptr::copy_nonoverlapping as memcpy;
@@ -31,6 +28,7 @@ use vulkanalia::vk::KhrSwapchainExtension;
 use nalgebra_glm as glm;
 
 mod objects;
+use crate::objects::mesh::*;
 use crate::objects::texture::*;
 use crate::objects::vertex::*;
 use crate::objects::uniform_buffer_object::*;
@@ -43,7 +41,6 @@ mod shared_memory;
 use shared_memory::*;
 
 mod shared_commands;
-use shared_commands::*;
 
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 const VALIDATION_LAYER: vk::ExtensionName = vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
@@ -132,9 +129,16 @@ impl App {
 
         create_texture_sampler(&device, &mut data)?;
 
-        load_model(&mut data)?;
-        create_vertex_buffer(&instance, &device, &mut data)?;
-        create_index_buffer(&instance, &device, &mut data)?;
+        // load_model(&mut data)?;
+        data.mesh = Mesh::from_filepath(
+            String::from("resources/viking_room.obj"),
+            &instance,
+            &device,
+            &data
+        )?;
+
+        // create_vertex_buffer(&instance, &device, &mut data)?;
+        // create_index_buffer(&instance, &device, &mut data)?;
         create_uniform_buffers(&instance, &device, &mut data)?;
         create_descriptor_pool(&device, &mut data)?;
         create_descriptor_sets(&device, &mut data)?;
@@ -238,10 +242,11 @@ impl App {
         self.data.texture.destroy(&self.device);
 
         self.device.destroy_descriptor_set_layout(self.data.descriptor_set_layout, None);
-        self.device.destroy_buffer(self.data.index_buffer, None);
-        self.device.free_memory(self.data.index_buffer_memory, None);
-        self.device.destroy_buffer(self.data.vertex_buffer, None);
-        self.device.free_memory(self.data.vertex_buffer_memory, None);
+        // self.device.destroy_buffer(self.data.index_buffer, None);
+        // self.device.free_memory(self.data.index_buffer_memory, None);
+        // self.device.destroy_buffer(self.data.vertex_buffer, None);
+        // self.device.free_memory(self.data.vertex_buffer_memory, None);
+        self.data.mesh.destroy(&self.device);
         self.data.in_flight_fences.iter().for_each(|f| self.device.destroy_fence(*f, None));
         self.data.render_finished_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
         self.data.image_available_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
@@ -346,8 +351,8 @@ pub struct AppData {
     in_flight_fences: Vec<vk::Fence>,
     images_in_flight: Vec<vk::Fence>,
 
-    index_buffer: vk::Buffer,
-    index_buffer_memory: vk::DeviceMemory,
+    // index_buffer: vk::Buffer,
+    // index_buffer_memory: vk::DeviceMemory,
 
     uniform_buffers: Vec<vk::Buffer>,
     uniform_buffers_memory: Vec<vk::DeviceMemory>,
@@ -366,10 +371,11 @@ pub struct AppData {
     depth_image_memory: vk::DeviceMemory,
     depth_image_view: vk::ImageView,
 
-    vertices: Vec<Vertex>,
-    indices: Vec<u32>,
-    vertex_buffer: vk::Buffer,
-    vertex_buffer_memory: vk::DeviceMemory,
+    // vertices: Vec<Vertex>,
+    // indices: Vec<u32>,
+    mesh: Mesh,
+    // vertex_buffer: vk::Buffer,
+    // vertex_buffer_memory: vk::DeviceMemory,
 
     color_image: vk::Image,
     color_image_memory: vk::DeviceMemory,
@@ -1014,8 +1020,8 @@ unsafe fn create_command_buffers(
         device.cmd_begin_render_pass(*command_buffer, &info, vk::SubpassContents::INLINE);
 
         device.cmd_bind_pipeline(*command_buffer, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
-        device.cmd_bind_vertex_buffers(*command_buffer, 0, &[data.vertex_buffer], &[0]);
-        device.cmd_bind_index_buffer(*command_buffer, data.index_buffer, 0, vk::IndexType::UINT32);
+        device.cmd_bind_vertex_buffers(*command_buffer, 0, &[data.mesh.vertex_buffer], &[0]);
+        device.cmd_bind_index_buffer(*command_buffer, data.mesh.index_buffer, 0, vk::IndexType::UINT32);
         device.cmd_bind_descriptor_sets(
             *command_buffer,
             vk::PipelineBindPoint::GRAPHICS,
@@ -1024,7 +1030,7 @@ unsafe fn create_command_buffers(
             &[data.descriptor_sets[i]],
             &[],
         );
-        device.cmd_draw_indexed(*command_buffer, data.indices.len() as u32, 1, 0, 0, 0);
+        device.cmd_draw_indexed(*command_buffer, data.mesh.indices.len() as u32, 1, 0, 0, 0);
         device.cmd_end_render_pass(*command_buffer);
 
         device.end_command_buffer(*command_buffer)?;
@@ -1061,37 +1067,6 @@ unsafe fn create_sync_objects(
 // BUFFERS
 // ================================================================================================
 
-unsafe fn create_vertex_buffer(
-    instance: &Instance,
-    device: &Device,
-    data: &mut AppData
-) -> Result<()> {
-    let size = (size_of::<Vertex>() * data.vertices.len()) as u64;
-
-    let (staging_buffer, staging_buffer_memory) = create_buffer(
-        instance, device, data, size,
-        vk::BufferUsageFlags::TRANSFER_SRC,
-        vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE
-    )?;
-
-    let memory = device.map_memory(staging_buffer_memory, 0, size, vk::MemoryMapFlags::empty())?;
-    memcpy(data.vertices.as_ptr(), memory.cast(), data.vertices.len());
-
-    let (vertex_buffer, vertex_buffer_memory) = create_buffer(instance, device, data, size,
-        vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
-        vk::MemoryPropertyFlags::DEVICE_LOCAL
-    )?;
-
-    data.vertex_buffer = vertex_buffer;
-    data.vertex_buffer_memory = vertex_buffer_memory;
-
-    copy_buffer(device, data, staging_buffer, vertex_buffer, size)?;
-
-    device.destroy_buffer(staging_buffer, None);
-    device.free_memory(staging_buffer_memory, None);
-
-    Ok(())
-}
 
 unsafe fn get_memory_type_index(
     instance: &Instance,
@@ -1107,38 +1082,6 @@ unsafe fn get_memory_type_index(
             suitable && memory_type.property_flags.contains(properties)
         })
         .ok_or_else(|| anyhow!("Failed to find suitable memory type."))
-}
-
-unsafe fn create_index_buffer(
-    instance: &Instance,
-    device: &Device,
-    data: &mut AppData
-) -> Result<()> {
-    let size = (size_of::<u32>() * data.indices.len()) as u64;
-
-    let (staging_buffer, staging_buffer_memory) = create_buffer(
-        instance, device, data, size,
-        vk::BufferUsageFlags::TRANSFER_SRC,
-        vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE
-    )?;
-
-    let memory = device.map_memory(staging_buffer_memory, 0,  size, vk::MemoryMapFlags::empty())?;
-    memcpy(data.indices.as_ptr(), memory.cast(), data.indices.len());
-
-    let (index_buffer, index_buffer_memory) = create_buffer(instance, device, data, size,
-        vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
-        vk::MemoryPropertyFlags::DEVICE_LOCAL
-    )?;
-
-    data.index_buffer = index_buffer;
-    data.index_buffer_memory = index_buffer_memory;
-
-    copy_buffer(device, data, staging_buffer, index_buffer, size)?;
-
-    device.destroy_buffer(staging_buffer, None);
-    device.free_memory(staging_buffer_memory, None);
-
-    Ok(())
 }
 
 unsafe fn create_uniform_buffers(
@@ -1160,27 +1103,6 @@ unsafe fn create_uniform_buffers(
         data.uniform_buffers.push(uniform_buffer);
         data.uniform_buffers_memory.push(uniform_buffer_memory);
     }
-
-    Ok(())
-}
-
-// ================================================================================================
-// SHARED BUFFERS
-// ================================================================================================
-
-unsafe fn copy_buffer(
-    device: &Device,
-    data: &AppData,
-    source: vk::Buffer,
-    destination: vk::Buffer,
-    size: vk::DeviceSize
-) -> Result<()> {
-    let command_buffer = begin_single_time_commands(device, data)?;
-
-    let regions = vk::BufferCopy::builder().size(size);
-    device.cmd_copy_buffer(command_buffer, source, destination, &[regions]);
-
-    end_single_time_commands(device, data, command_buffer)?;
 
     Ok(())
 }
@@ -1351,48 +1273,48 @@ unsafe fn get_depth_format(
 // MODELS
 // ================================================================================================
 
-fn load_model(data: &mut AppData) -> Result<()> {
-    let mut reader = BufReader::new(File::open("resources/viking_room.obj")?);
+// fn load_model(data: &mut AppData) -> Result<()> {
+//     let mut reader = BufReader::new(File::open("resources/viking_room.obj")?);
 
-    let (models, _) = tobj::load_obj_buf(
-        &mut reader, 
-        &tobj::LoadOptions { triangulate: true, ..Default::default() }, 
-        |_| Ok(Default::default())
-    )?;
+//     let (models, _) = tobj::load_obj_buf(
+//         &mut reader, 
+//         &tobj::LoadOptions { triangulate: true, ..Default::default() }, 
+//         |_| Ok(Default::default())
+//     )?;
 
-    let mut unique_vertices = HashMap::new();
+//     let mut unique_vertices = HashMap::new();
 
-    for model in &models {
-        for index in &model.mesh.indices {
-            let pos_offset = (3 * index) as usize;
-            let tex_coord_offset = (2 * index) as usize;
+//     for model in &models {
+//         for index in &model.mesh.indices {
+//             let pos_offset = (3 * index) as usize;
+//             let tex_coord_offset = (2 * index) as usize;
 
-            let vertex = Vertex {
-                pos: glm::vec3(
-                    model.mesh.positions[pos_offset],
-                    model.mesh.positions[pos_offset + 1],
-                    model.mesh.positions[pos_offset + 2],
-                ),
-                color: glm::vec3(1.0, 1.0, 1.0),
-                tex_coord: glm::vec2(
-                    model.mesh.texcoords[tex_coord_offset],
-                    1.0 - model.mesh.texcoords[tex_coord_offset + 1]
-                )
-            };
+//             let vertex = Vertex {
+//                 pos: glm::vec3(
+//                     model.mesh.positions[pos_offset],
+//                     model.mesh.positions[pos_offset + 1],
+//                     model.mesh.positions[pos_offset + 2],
+//                 ),
+//                 color: glm::vec3(1.0, 1.0, 1.0),
+//                 tex_coord: glm::vec2(
+//                     model.mesh.texcoords[tex_coord_offset],
+//                     1.0 - model.mesh.texcoords[tex_coord_offset + 1]
+//                 )
+//             };
 
-            if let Some(index) = unique_vertices.get(&vertex) {
-                data.indices.push(*index as u32);
-            } else {
-                let index = data.vertices.len();
-                unique_vertices.insert(vertex, index);
-                data.vertices.push(vertex);
-                data.indices.push(index as u32);
-            }
-        }
-    }
+//             if let Some(index) = unique_vertices.get(&vertex) {
+//                 data.indices.push(*index as u32);
+//             } else {
+//                 let index = data.vertices.len();
+//                 unique_vertices.insert(vertex, index);
+//                 data.vertices.push(vertex);
+//                 data.indices.push(index as u32);
+//             }
+//         }
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 // ================================================================================================
 // COLOR OBJECTS

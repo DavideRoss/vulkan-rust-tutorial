@@ -4,6 +4,23 @@ use vulkanalia::prelude::v1_0::*;
 use crate::AppData;
 use crate::shared_commands::*;
 
+pub unsafe fn copy_buffer(
+    device: &Device,
+    data: &AppData,
+    source: vk::Buffer,
+    destination: vk::Buffer,
+    size: vk::DeviceSize
+) -> Result<()> {
+    let command_buffer = begin_single_time_commands(device, data)?;
+
+    let regions = vk::BufferCopy::builder().size(size);
+    device.cmd_copy_buffer(command_buffer, source, destination, &[regions]);
+
+    end_single_time_commands(device, data, command_buffer)?;
+
+    Ok(())
+}
+
 pub unsafe fn copy_buffer_to_image(
     device: &Device,
     data: &AppData,
@@ -34,7 +51,6 @@ pub unsafe fn copy_buffer_to_image(
 
     Ok(())
 }
-
 
 pub unsafe fn create_buffer(
     instance: &Instance,
