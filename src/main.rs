@@ -121,7 +121,7 @@ impl App {
         create_framebuffers(&device, &mut data)?;
 
         data.texture = Texture::from_filepath(
-            String::from("resources/viking_room.png"),
+            String::from("resources/jvctv/textures/JVCTV_albedo.png"),
             &instance,
             &device,
             &data
@@ -129,16 +129,13 @@ impl App {
 
         create_texture_sampler(&device, &mut data)?;
 
-        // load_model(&mut data)?;
         data.mesh = Mesh::from_filepath(
-            String::from("resources/viking_room.obj"),
+            String::from("resources/jvctv/jvctv.obj"),
             &instance,
             &device,
             &data
         )?;
 
-        // create_vertex_buffer(&instance, &device, &mut data)?;
-        // create_index_buffer(&instance, &device, &mut data)?;
         create_uniform_buffers(&instance, &device, &mut data)?;
         create_descriptor_pool(&device, &mut data)?;
         create_descriptor_sets(&device, &mut data)?;
@@ -292,8 +289,8 @@ impl App {
         );
 
         let view = glm::look_at(
-            &glm::vec3(2.0, 2.0, 2.0), 
-            &glm::vec3(0.0, 0.0, 0.0), 
+            &glm::vec3(0.0, -12.0, 5.0), 
+            &glm::vec3(0.0, 0.0, 1.0), 
             &glm::vec3(0.0, 0.0, 1.0)
         );
 
@@ -301,7 +298,7 @@ impl App {
             self.data.swapchain_extent.width as f32 / self.data.swapchain_extent.height as f32,
             glm::radians(&glm::vec1(45.0))[0],
             0.1,
-            10.0
+            100.0
         );
 
         proj[(1, 1)] *= -1.0;
@@ -1268,53 +1265,6 @@ unsafe fn get_depth_format(
 
     get_supported_format(instance, data, candidates, vk::ImageTiling::OPTIMAL, vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT)
 }
-
-// ================================================================================================
-// MODELS
-// ================================================================================================
-
-// fn load_model(data: &mut AppData) -> Result<()> {
-//     let mut reader = BufReader::new(File::open("resources/viking_room.obj")?);
-
-//     let (models, _) = tobj::load_obj_buf(
-//         &mut reader, 
-//         &tobj::LoadOptions { triangulate: true, ..Default::default() }, 
-//         |_| Ok(Default::default())
-//     )?;
-
-//     let mut unique_vertices = HashMap::new();
-
-//     for model in &models {
-//         for index in &model.mesh.indices {
-//             let pos_offset = (3 * index) as usize;
-//             let tex_coord_offset = (2 * index) as usize;
-
-//             let vertex = Vertex {
-//                 pos: glm::vec3(
-//                     model.mesh.positions[pos_offset],
-//                     model.mesh.positions[pos_offset + 1],
-//                     model.mesh.positions[pos_offset + 2],
-//                 ),
-//                 color: glm::vec3(1.0, 1.0, 1.0),
-//                 tex_coord: glm::vec2(
-//                     model.mesh.texcoords[tex_coord_offset],
-//                     1.0 - model.mesh.texcoords[tex_coord_offset + 1]
-//                 )
-//             };
-
-//             if let Some(index) = unique_vertices.get(&vertex) {
-//                 data.indices.push(*index as u32);
-//             } else {
-//                 let index = data.vertices.len();
-//                 unique_vertices.insert(vertex, index);
-//                 data.vertices.push(vertex);
-//                 data.indices.push(index as u32);
-//             }
-//         }
-//     }
-
-//     Ok(())
-// }
 
 // ================================================================================================
 // COLOR OBJECTS

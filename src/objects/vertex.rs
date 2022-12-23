@@ -9,12 +9,13 @@ use vulkanalia::prelude::v1_0::*;
 pub struct Vertex {
     pub pos: glm::Vec3,
     pub color: glm::Vec3,
-    pub tex_coord: glm::Vec2
+    pub tex_coord: glm::Vec2,
+    pub normal: glm::Vec3
 }
 
 impl Vertex {
-    pub fn new(pos: glm::Vec3, color: glm::Vec3, tex_coord: glm::Vec2) -> Self {
-        Self { pos, color, tex_coord }
+    pub fn new(pos: glm::Vec3, color: glm::Vec3, tex_coord: glm::Vec2, normal: glm::Vec3) -> Self {
+        Self { pos, color, tex_coord, normal }
     }
 
     pub fn binding_description() -> vk::VertexInputBindingDescription {
@@ -25,7 +26,7 @@ impl Vertex {
             .build()
     }
 
-    pub fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 3] {
+    pub fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 4] {
         let pos = vk::VertexInputAttributeDescription::builder()
             .binding(0)
             .location(0)
@@ -47,13 +48,23 @@ impl Vertex {
             .offset((size_of::<glm::Vec3>() + size_of::<glm::Vec3>()) as u32)
             .build();
 
-        [pos, color, tex_coord]
+        let normal = vk::VertexInputAttributeDescription::builder()
+            .binding(0)
+            .location(3)
+            .format(vk::Format::R32G32B32_SFLOAT)
+            .offset((size_of::<glm::Vec3>() + size_of::<glm::Vec3>() + size_of::<glm::Vec2>()) as u32)
+            .build();
+
+        [pos, color, tex_coord, normal]
     }
 }
 
 impl PartialEq for Vertex {
     fn eq(&self, other: &Self) -> bool {
-        self.pos == other.pos && self.color == other.color && self.tex_coord == other.tex_coord
+        self.pos == other.pos &&
+        self.color == other.color &&
+        self.tex_coord == other.tex_coord &&
+        self.normal == other.normal
     }
 }
 
@@ -71,5 +82,9 @@ impl Hash for Vertex {
 
         self.tex_coord[0].to_bits().hash(state);
         self.tex_coord[1].to_bits().hash(state);
+
+        self.normal[0].to_bits().hash(state);
+        self.normal[1].to_bits().hash(state);
+        self.normal[2].to_bits().hash(state);
     }
 }

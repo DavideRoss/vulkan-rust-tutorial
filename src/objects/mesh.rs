@@ -36,7 +36,12 @@ impl Mesh {
 
         let (models, _) = tobj::load_obj_buf(
             &mut reader, 
-            &tobj::LoadOptions { triangulate: true, ..Default::default() }, 
+            &tobj::LoadOptions {
+                triangulate: true,
+                single_index: true,
+                ..Default::default()
+            }, 
+
             |_| Ok(Default::default())
         )?;
 
@@ -50,17 +55,38 @@ impl Mesh {
                 let pos_offset = (3 * index) as usize;
                 let tex_coords_offset = (2 * index) as usize;
 
+                let mut vtx_color = glm::vec3(1.0, 1.0, 1.0);
+                if model.mesh.vertex_color.len() > 0 {
+                    let vtx_color_offset = (3 * index) as usize;
+                    vtx_color = glm::vec3(
+                        model.mesh.vertex_color[vtx_color_offset],
+                        model.mesh.vertex_color[vtx_color_offset + 1],
+                        model.mesh.vertex_color[vtx_color_offset + 2],
+                    );
+                }
+
+                let mut normal = glm::vec3(0.0, 0.0, 1.0);
+                if model.mesh.normals.len() > 0 {
+                    let normal_offset = (3 * index) as usize;
+                    normal = glm::vec3(
+                        model.mesh.normals[normal_offset],
+                        model.mesh.normals[normal_offset + 1],
+                        model.mesh.normals[normal_offset + 2]
+                    );
+                }
+
                 let vertex = Vertex {
                     pos: glm::vec3(
                         model.mesh.positions[pos_offset],
                         model.mesh.positions[pos_offset + 1],
                         model.mesh.positions[pos_offset + 2],
                     ),
-                    color: glm::vec3(1.0, 1.0, 1.0),
+                    color: vtx_color,
                     tex_coord: glm::vec2(
                         model.mesh.texcoords[tex_coords_offset],
                         1.0 - model.mesh.texcoords[tex_coords_offset + 1]
-                    )
+                    ),
+                    normal
                 };
 
                 if let Some(index) = unique_vertices.get(&vertex) {

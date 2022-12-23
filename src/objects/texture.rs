@@ -40,13 +40,16 @@ impl Texture {
             vk::BufferUsageFlags::TRANSFER_SRC,
             vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE
         )?;
-
+        
         let memory = device.map_memory(
             staging_buffer_memory, 0, size, vk::MemoryMapFlags::empty()
         )?;
-
+        
         memcpy(pixels.as_ptr(), memory.cast(), pixels.len());
         device.unmap_memory(staging_buffer_memory);
+        
+        // TODO: add format determination
+        // println!("{} bit - {:?}", reader.info().bit_depth as usize, reader.info().color_type);
 
         let (image, image_memory) = create_image(
             instance, device, data,
