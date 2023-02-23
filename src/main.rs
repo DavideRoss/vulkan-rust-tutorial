@@ -19,7 +19,7 @@ use winit::window::{Window, WindowBuilder};
 
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::window as vk_window;
-use vulkanalia::prelude::v1_0::*;
+use vulkanalia::prelude::v1_1::*;
 
 use vulkanalia::vk::ExtDebugUtilsExtension;
 use vulkanalia::vk::KhrSurfaceExtension;
@@ -121,7 +121,13 @@ impl App {
         create_framebuffers(&device, &mut data)?;
 
         data.textures = vec![
-            Texture::from_filepath(String::from("resources/jvctv/textures/JVCTV_albedo.png"), &instance, &device, &data)?,
+            // Texture::from_filepath(String::from("resources/jvctv/textures/JVCTV_albedo_small.png"), &instance, &device, &data)?,
+            Texture2D::load_from_file(
+                &instance, &device, &data,
+                "resources/jvctv/textures/JVCTV_albedo_small.png",
+                vk::Format::R8G8B8A8_SRGB,
+                None, None
+            )?
             // Texture::from_filepath(String::from("resources/jvctv/textures/JVCTV_roughness.png"), &instance, &device, &data)?,
             // Texture::from_filepath(String::from("resources/jvctv/textures/JVCTV_metallic.png"), &instance, &device, &data)?
         ];
@@ -232,7 +238,7 @@ impl App {
         self.destroy_swapchain();
 
         self.device.destroy_sampler(self.data.texture_sampler, None);
-        self.data.textures.iter().for_each(|t| t.destroy(&self.device));
+        self.data.textures.iter().for_each(|t| t.texture.destroy(&self.device));
 
         self.device.destroy_descriptor_set_layout(self.data.descriptor_set_layout, None);
         self.data.mesh.destroy(&self.device);
@@ -348,7 +354,7 @@ pub struct AppData {
 
     mip_levels: u32,
     // texture: Texture,
-    textures: Vec<Texture>,
+    textures: Vec<Texture2D>,
     texture_sampler: vk::Sampler,
 
     depth_image: vk::Image,
@@ -376,7 +382,7 @@ unsafe fn create_instance(
         .application_version(vk::make_version(1, 0, 0))
         .engine_name(b"No engine\0")
         .engine_version(vk::make_version(1, 0, 0))
-        .api_version(vk::make_version(1, 0, 0));
+        .api_version(vk::make_version(1, 3, 0));
 
     let available_layers = entry
         .enumerate_instance_layer_properties()?
@@ -1140,7 +1146,7 @@ unsafe fn create_descriptor_sets(
 
         let info = vk::DescriptorImageInfo::builder()
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .image_view(data.textures[0].image_view)
+            .image_view(data.textures[0].texture.image_view)
             .sampler(data.texture_sampler);
         let image_info = &[info];
 
@@ -1288,4 +1294,16 @@ unsafe fn create_color_objects(
     )?;
 
     Ok(())
+}
+
+// ================================================================================================
+// TEXTURES
+// ================================================================================================
+
+struct Textures {
+    env_cube: Texture,
+    empty: Texture,
+    lut_brdf: Texture,
+    irradiance_cube: Texture,
+    prefiltered_cube: Texture
 }

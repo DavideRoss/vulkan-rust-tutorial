@@ -11,7 +11,8 @@ pub unsafe fn begin_single_time_commands(
     let info = vk::CommandBufferAllocateInfo::builder()
         .level(vk::CommandBufferLevel::PRIMARY)
         .command_pool(data.command_pool)
-        .command_buffer_count(1);
+        .command_buffer_count(1)
+        .build();
     
     let command_buffer = device.allocate_command_buffers(&info)?[0];
 

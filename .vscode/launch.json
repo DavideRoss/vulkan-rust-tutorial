@@ -7,14 +7,45 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Cargo launch",
+            "name": "Debug executable 'vulkan-tutorial'",
             "cargo": {
                 "args": [
-                    "build"
-                ]
+                    "build",
+                    "--bin=vulkan-tutorial",
+                    "--package=vulkan-tutorial"
+                ],
+                "filter": {
+                    "name": "vulkan-tutorial",
+                    "kind": "bin"
+                }
             },
-            "args": []
+            "env": {
+                "RUST_LOG": "info"
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'vulkan-tutorial'",
+            "cargo": {
+                "env": {
+                    "RUST_LOG": "info"
+                },
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=vulkan-tutorial",
+                    "--package=vulkan-tutorial"
+                ],
+                "filter": {
+                    "name": "vulkan-tutorial",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
         }
-
     ]
 }
