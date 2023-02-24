@@ -82,13 +82,13 @@ impl Texture2D {
         let begin_info = vk::CommandBufferBeginInfo::builder().build();
         device.begin_command_buffer(copy_cmd, &begin_info)?;
 
-        let buffer_info = vk::BufferCreateInfo::builder()
+        let staging_buffer_info = vk::BufferCreateInfo::builder()
             .size(size)
             .usage(vk::BufferUsageFlags::TRANSFER_SRC)
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .build();
 
-        let staging_buffer = device.create_buffer(&buffer_info, None)?;
+        let staging_buffer = device.create_buffer(&staging_buffer_info, None)?;
         let mut mem_reqs = device.get_buffer_memory_requirements(staging_buffer);
 
         let mut mem_info = vk::MemoryAllocateInfo::builder()
@@ -270,22 +270,32 @@ impl Texture2D {
 
 /*
 
-- load texture in library
-- get width, height, mip levels
-- get VkFormatProperties
-- create copy command buffer
-- create staging buffer
-- get memory requirements for staging buffer
-- allocate and bind staging buffer
-- memcpy inside this buffer
-- unmap staging memory
-- create mip levels
-    - for each mip level, create a new VkBufferImageCopy
-- create image
-- get memory requirement for image
-- allocate and bind device memory for images
+X load texture in library
+X get width, height, mip levels
+X get VkFormatProperties (not used)
+X create copy command buffer
+X create staging buffer
+X get memory requirements for staging buffer
+X allocate and bind staging buffer
+X memcpy inside this buffer
+X unmap staging memory
+X create mip levels
+    X for each mip level, create a new VkBufferImageCopy
+X create image
+X get memory requirement for image
+X allocate and bind device memory for images
+- create subresource range
+- in a closure, create image memory barrier
+- add command copy buffer to image
+- assign image layout property
+- in a closure, create another image memory barrier
+- flush copy command buffer
+- free staging memory and destroy the staging buffer
+- create sampler
+- create image view
+- update texture descriptor
 
- */
+*/
 
 // #[derive(Copy, Clone, Debug, Default)]
 // pub struct Texture {
