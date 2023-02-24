@@ -5,6 +5,7 @@ use vulkanalia::prelude::v1_0::*;
 use anyhow::{Result, Ok};
 
 use crate::AppData;
+use crate::shared_commands::begin_single_time_commands;
 use crate::shared_memory::*;
 
 #[derive(Clone, Debug)]
@@ -107,26 +108,54 @@ impl Texture2D {
         memcpy(pixels.as_ptr(), mem_dst.cast(), pixels.len());
         device.unmap_memory(staging_mem);
 
-        let mut buffer_copy_regions: Vec<vk::BufferImageCopy> = vec![];
-        let mut offset: u64 = 0;
-        
-        for i in 0..mip_levels {
-            let subres = vk::ImageSubresourceLayers::builder()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .mip_level(i)
-                .base_array_layer(0)
-                .layer_count(1)
-                .build();
+        // ========================================================
+        // GENERATE MIPMAPS
+        // ========================================================
 
-            let buffer_copy_region = vk::BufferImageCopy::builder()
-                .image_subresource(subres)
-                .image_extent(vk::Extent3D { width, height, depth: 1 })
-                .buffer_offset(offset)
-                .build();
+        // let mut buffer_copy_regions: Vec<vk::BufferImageCopy> = vec![];
+        // let mut offset: u64 = 0;
 
-            buffer_copy_regions.push(buffer_copy_region);
-            offset += size;
-        }
+        // TODO: here's the problem: the library used (GLI) includes mipmaps generation
+        // We are reading the raw image, so no mipmaps are available
+        // Thus, it's trying to read on nothing
+        // TODO: add mipmap generation using blit
+
+        // for i in 0..mip_levels {
+        //     let subres = vk::ImageSubresourceLayers::builder()
+        //         .aspect_mask(vk::ImageAspectFlags::COLOR)
+        //         .mip_level(i)
+        //         .base_array_layer(0)
+        //         .layer_count(1)
+        //         .build();
+
+        //     let buffer_copy_region = vk::BufferImageCopy::builder()
+        //         .image_subresource(subres)
+        //         .image_extent(vk::Extent3D { width: mip_width, height: mip_height, depth: 1 })
+        //         .buffer_offset(offset)
+        //         .build();
+
+        //     buffer_copy_regions.push(buffer_copy_region);
+        //     offset += size;
+        // }
+
+        let cmd_buffer = begin_single_time_commands(device, data)?;
+        let subres = vk::ImageSubresourceRange::builder()
+            .aspect_mask(vk::ImageAspectFlags::COLOR)
+            .base_array_layer(0)
+            .layer_count(1)
+            .level_count(1)
+            .build();
+
+        let mut mip_barrier = vk::ImageMemoryBarrier::builder()
+            .image(image)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .subresource_range(subres)
+            .build();
+
+        // ========================================================
+        // END GENERATE MIPMAPS
+        // ========================================================
 
         let image_info = vk::ImageCreateInfo::builder()
             .image_type(vk::ImageType::_2D)
@@ -185,6 +214,35 @@ impl Texture2D {
             );
         }
 
+        device.cmd_copy_buffer_to_image(
+            copy_cmd, 
+            staging_buffer,
+            image, 
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            &buffer_copy_regions
+        );
+
+        {
+            let image_memory_barrier = vk::ImageMemoryBarrier::builder()
+                .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                .new_layout(image_layout.unwrap_or(vk::ImageLayout::READ_ONLY_OPTIMAL))
+                .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
+                .image(image)
+                .subresource_range(subres_range)
+                .build();
+
+            device.cmd_pipeline_barrier(
+                copy_cmd,
+                vk::PipelineStageFlags::ALL_COMMANDS,
+                vk::PipelineStageFlags::ALL_COMMANDS,
+                vk::DependencyFlags::empty(),
+                &[] as &[vk::MemoryBarrier],
+                &[] as &[vk::BufferMemoryBarrier],
+                &[image_memory_barrier]
+            );
+        }
+
         // End command buffer and flush
         // TODO: move to separate function
         device.end_command_buffer(copy_cmd)?;
@@ -193,6 +251,7 @@ impl Texture2D {
         let fence_info = vk::FenceCreateInfo::builder().build();
         let fence = device.create_fence(&fence_info, None)?;
 
+        // TODO: not sure about the queue if it's the right one
         device.queue_submit(data.graphics_queue, &[submit_info], fence)?;
         device.wait_for_fences(&[fence], true, 100000000000)?;
         device.destroy_fence(fence, None);
@@ -223,7 +282,7 @@ impl Texture2D {
         let image_view_subres_range = vk::ImageSubresourceRange::builder()
             .aspect_mask(vk::ImageAspectFlags::COLOR)
             .base_mip_level(0)
-            .level_count(mip_levels)
+            .level_count(mip_levels) // TODO: why is it different?
             .base_array_layer(0)
             .layer_count(1)
             .build();
@@ -262,9 +321,7 @@ impl Texture2D {
             descriptor
         };
 
-        Ok(Texture2D {
-            texture
-        })
+        Ok(Texture2D { texture })
     }
 }
 
